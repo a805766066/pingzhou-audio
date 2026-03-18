@@ -1,0 +1,12 @@
+{
+  "name": "pingzhou-audio",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "gen:homework-audio": "node scripts/generate-homework-audio.mjs"
+  },
+  "dependencies": {
+    "@supabase/supabase-js": "^2.49.8",
+    "node-edge-tts": "^1.2.10"
+  }
+}

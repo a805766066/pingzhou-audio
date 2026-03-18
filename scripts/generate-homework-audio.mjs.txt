@@ -1,0 +1,75 @@
+import path from "node:path";
+import process from "node:process";
+import { createClient } from "@supabase/supabase-js";
+import { EdgeTTS } from "node-edge-tts";
+
+const SUPABASE_URL = process.env.SUPABASE_URL || "";
+const SUPABASE_ANON_KEY = process.env.SUPABASE_ANON_KEY || "";
+const OUTPUT_FILE = path.join(process.cwd(), "today-homework.mp3");
+
+function normalizePart(input) {
+  return String(input || "").replace(/\s+/g, " ").trim().replace(/[。！？.!?]+$/g, "");
+}
+
+function buildSpeechText(item) {
+  const title = normalizePart(item?.title);
+  const content = normalizePart(item?.content);
+  const parts = ["今日作业", title, content].filter(Boolean);
+  return parts.join("。") + "。";
+}
+
+async function fetchLatestHomework(supabase) {
+  const { data, error } = await supabase
+    .from("homework_assignments")
+    .select("id,title,content,homework_date,published_at,created_at")
+    .eq("status", "published")
+    .order("homework_date", { ascending: false, nullsFirst: false })
+    .order("published_at", { ascending: false, nullsFirst: false })
+    .order("created_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  if (error) throw new Error(`Supabase query failed: ${error.message}`);
+  if (!data) throw new Error("No published homework found in homework_assignments");
+  return data;
+}
+
+async function synthToFile(text, outputFile) {
+  const tts = new EdgeTTS({
+    voice: "zh-CN-XiaoxiaoNeural",
+    lang: "zh-CN",
+    timeout: 30000
+  });
+
+  try {
+    await tts.ttsPromise(text, outputFile);
+  } catch {
+    const fallbackTts = new EdgeTTS({
+      voice: "zh-CN-XiaoyiNeural",
+      lang: "zh-CN",
+      timeout: 30000
+    });
+    await fallbackTts.ttsPromise(text, outputFile);
+  }
+}
+
+async function main() {
+  if (!SUPABASE_URL || !SUPABASE_ANON_KEY) {
+    throw new Error("Missing SUPABASE_URL or SUPABASE_ANON_KEY");
+  }
+
+  const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+  const homework = await fetchLatestHomework(supabase);
+  const text = buildSpeechText(homework);
+  if (!text.trim()) throw new Error("Generated speech text is empty");
+
+  await synthToFile(text, OUTPUT_FILE);
+
+  console.log("Generated:", OUTPUT_FILE);
+  console.log("Homework ID:", homework.id);
+}
+
+main().catch((err) => {
+  console.error(err.message || err);
+  process.exit(1);
+});
